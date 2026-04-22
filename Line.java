@@ -1,6 +1,17 @@
+/**
+ * Represents one of the 76 possible winning lines on a 4×4×4 board.
+ *
+ * A winning line is any set of 4 collinear cells. The 76 lines break down as:
+ *   - 48 straight lines: rows (Y/Z fixed), columns (X/Z fixed), pillars (X/Y fixed)
+ *   - 24 face diagonals: forward and reverse diagonals within each axis-aligned layer
+ *   - 4 space diagonals: the 4 main diagonals passing through the center of the cube
+ *
+ * Each line stores its 4 positions as a bitmask (long) for fast bitwise intersection
+ * with the board's bitboard representation.
+ */
 public class Line {
 
-    private long positions;
+    private long positions;  // bitmask of the 4 cells that form this line
     private String name;
 
     private Line(String name) {
@@ -13,14 +24,12 @@ public class Line {
         this.name = "";
     }
 
+    /** Returns the bitmask of the 4 positions making up this line. */
     public long positions() {
-        // A bit vector containing the four positions
-        // making up this line on the board.
         return this.positions;
     }
 
     public String name() {
-        // A descriptive name for this line.
         return this.name;
     }
 
@@ -32,9 +41,9 @@ public class Line {
         return (this.positions & other.positions) != 0;
     }
 
+    /** Returns the single coordinate where two intersecting lines cross, or null if they don't. */
     public Coordinate intersection(Line other) {
         if (this.intersects(other)) {
-            // return new Coordinate(this.positions & other.positions);
             return Coordinate.forMask(this.positions & other.positions);
         } else {
             return null;
@@ -68,7 +77,9 @@ public class Line {
     }
 
 
-    // Private methods to construct the various lines on the board
+    // -----------------------------------------------------------------------
+    // Private factory methods for constructing each class of winning line
+    // -----------------------------------------------------------------------
 
     private static enum Axis { X, Y, Z }
     private static final int N = Coordinate.N;
@@ -77,6 +88,10 @@ public class Line {
         this.positions = Bit.set(this.positions, Coordinate.position(x, y, z));
     }
 
+    /**
+     * Creates a straight line along the given axis at the fixed (row, column) cross-section.
+     * E.g. Axis.X with row=1, column=2 is the row where Y=1, Z=2.
+     */
     private static Line Straight(Axis axis, int row, int column) {
         String name = "Straight line: ";
         switch (axis) {
@@ -97,6 +112,10 @@ public class Line {
         return line;
     }
 
+    /**
+     * Creates a forward face diagonal (i increases along both varying axes)
+     * within the plane where the given axis is fixed to value.
+     */
     private static Line ForwardDiagonal(Axis axis, int value) {
         String name = "Forward diagonal: ";
         switch (axis) {
@@ -117,7 +136,7 @@ public class Line {
         return line;
     }
 
-
+    /** The single main space diagonal where x == y == z. */
     private static Line ForwardDiagonal() {
         String name = "Main diagonal";
         Line line = new Line(name);
@@ -127,7 +146,10 @@ public class Line {
         return line;
     }
 
-
+    /**
+     * Creates a reverse face diagonal within the plane where the given axis is fixed to value.
+     * One axis increases while the other decreases.
+     */
     private static Line ReverseDiagonal(Axis axis, int value) {
         String name = "Reverse diagonal: ";
         switch (axis) {
@@ -148,6 +170,7 @@ public class Line {
         return line;
     }
 
+    /** One of the 3 reverse space diagonals — flips one axis relative to the main diagonal. */
     private static Line ReverseDiagonal(Axis axis) {
         String name = "Main diagonal: reverse";
         switch (axis) {
@@ -168,27 +191,36 @@ public class Line {
     }
 
 
-    // A list of all the possible lines on the board:
+    // -----------------------------------------------------------------------
+    // Precomputed array of all 76 winning lines, built at class-load time
+    // -----------------------------------------------------------------------
 
     public static final Line[] lines = new Line[76];
     static {
         int count = 0;
+
         for (Axis axis : Axis.values()) {
+            // 16 straight lines per axis (4 rows × 4 columns) = 48 total
             for (int row = 0; row < N; row++) {
                 for (int column = 0; column < N; column++) {
                     lines[count++] = Straight(axis, row, column);
                 }
             }
+            // 4 forward + 4 reverse face diagonals per axis = 24 total
             for (int value = 0; value < N; value++) {
                 lines[count++] = ForwardDiagonal(axis, value);
                 lines[count++] = ReverseDiagonal(axis, value);
             }
+            // 1 reverse space diagonal per axis = 3 total
             lines[count++] = ReverseDiagonal(axis);
         }
+
+        // 1 main forward space diagonal (x == y == z)
         lines[count++] = ForwardDiagonal();
         assert count == 76;
     }
 
+    /** Finds the Line whose bitmask exactly matches positions, or null if none found. */
     public static Line find(long positions) {
         for (Line line : lines) {
             if (line.positions() == positions) return line;

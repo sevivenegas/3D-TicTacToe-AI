@@ -1,32 +1,48 @@
 import java.util.ArrayList;
 import java.util.Iterator;
 
+/**
+ * Represents the 4×4×4 game board using a bitboard encoding.
+ *
+ * Two 64-bit longs (x and o) serve as boolean vectors where bit i is set if
+ * player X or O occupies position i. This allows fast win detection and move
+ * generation using bitwise AND against precomputed line masks.
+ *
+ * Positions are encoded by Coordinate: position = z*N² + y*N + x, where N = 4.
+ */
 public class Board {
 
     public static final int N = 4;
 
-    private long x; // Boolean vector of positions containing X's
-    private long o; // Boolean vector of positions containing O's
+    private long x;  // bitmask: bit i is set if X occupies position i
+    private long o;  // bitmask: bit i is set if O occupies position i
 
 
-    // Constructors.
+    // -----------------------------------------------------------------------
+    // Constructors
+    // -----------------------------------------------------------------------
 
     public Board() {
         this.x = 0;
         this.o = 0;
     }
 
+    /** Copy constructor. */
     public Board(Board board) {
         this.x = board.x;
         this.o = board.o;
     }
 
+    /**
+     * Constructs a board from a string representation.
+     * 'X'/'x' = X, 'O'/'o' = O, '.' = empty. Spaces and '|' are ignored.
+     */
     public Board(String s) {
         int position = 0;
         this.x = 0;
         this.o = 0;
 
-        for (int i= 0; i < s.length(); i++) {
+        for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             switch (c) {
                 case 'x':
@@ -53,60 +69,74 @@ public class Board {
         }
     }
 
-    // Evaluation Function
 
-    public int evaluation(Player playing){
+    // -----------------------------------------------------------------------
+    // Evaluation / Heuristic
+    // -----------------------------------------------------------------------
+
+    /**
+     * Scores the board from X's perspective using a heuristic over all 76 winning lines.
+     *
+     * Returns Integer.MAX_VALUE if X has won, Integer.MIN_VALUE+1 if O has won.
+     * Otherwise, scores based on unblocked threats:
+     *   - 3-in-a-row unblocked: weight 100
+     *   - 2-in-a-row unblocked: weight 10
+     *
+     * The player whose turn it is gets their threat counts doubled to favor offense.
+     *
+     * @param playing the player about to move (used for the offensive weighting)
+     */
+    public int evaluation(Player playing) {
         int value = 0;
 
         int xthree = 0;
         int othree = 0;
+        int xtwo   = 0;
+        int otwo   = 0;
 
-        int xtwo = 0;
-        int otwo = 0;
+        for (Line line : Line.lines) {
+            long xMask = x & line.positions();
+            long oMask = o & line.positions();
 
-        for(Line line : Line.lines){
-
-            Long xMask = x & line.positions();
-            Long oMask = o & line.positions();
-
-            if(xMask != 0 && oMask == 0){
+            // A line is only useful if it's unblocked (only one player has pieces on it)
+            if (xMask != 0 && oMask == 0) {
                 int xCount = Bit.countOnes(xMask);
-                if(xCount == 4) return Integer.MAX_VALUE;
-                if(xCount == 3) xthree++;
-                else if(xCount == 2) xtwo++;
-            }
-            else if(oMask != 0 && xMask == 0){
+                if (xCount == 4) return Integer.MAX_VALUE;       // X wins
+                if (xCount == 3) xthree++;
+                else if (xCount == 2) xtwo++;
+            } else if (oMask != 0 && xMask == 0) {
                 int oCount = Bit.countOnes(oMask);
-                if(oCount == 4) return Integer.MIN_VALUE+1;
-                if(oCount == 3) othree++;
-                if(oCount == 2) otwo++;
+                if (oCount == 4) return Integer.MIN_VALUE + 1;   // O wins
+                if (oCount == 3) othree++;
+                if (oCount == 2) otwo++;
             }
-
         }
 
-
-
-        if(playing == Player.X){
+        // Double the active player's threat counts to bias toward offensive play
+        if (playing == Player.X) {
             xthree *= 2;
-            xtwo *= 2;
-        }
-        else{
+            xtwo   *= 2;
+        } else {
             othree *= 2;
-            otwo *= 2;
+            otwo   *= 2;
         }
+
         value = (xthree - othree) * 100 + (xtwo - otwo) * 10;
         return value;
     }
 
-    public int simpleEvaluation(Player playing){
+    public int simpleEvaluation(Player playing) {
         return 0;
     }
 
-    // Empty squares.
+
+    // -----------------------------------------------------------------------
+    // Empty square queries
+    // -----------------------------------------------------------------------
 
     public boolean isEmpty(int position) {
         assert Coordinate.isValid(position);
-        return ! Bit.isSet(this.x | this.o, position);
+        return !Bit.isSet(this.x | this.o, position);
     }
 
     public boolean isEmpty(Coordinate coordinate) {
@@ -117,19 +147,26 @@ public class Board {
         return this.isEmpty(Coordinate.position(x, y, z));
     }
 
+    /** Returns the count of unoccupied cells using a popcount on the complement of occupied bits. */
     public int numberEmptySquares() {
         return Bit.countOnes(~(this.x | this.o));
     }
 
 
-    // Get value of a square on the board.
+    // -----------------------------------------------------------------------
+    // Get the occupant of a cell
+    // -----------------------------------------------------------------------
 
+    /**
+     * Returns the bitmask of all cells belonging to the given player.
+     * Player.EMPTY returns the complement of all occupied cells.
+     */
     public long get(Player player) {
-        switch(player) {
+        switch (player) {
             case EMPTY: return ~(this.x | this.o);
-            case X: return this.x;
-            case O: return this.o;
-            default: return 0;
+            case X:     return this.x;
+            case O:     return this.o;
+            default:    return 0;
         }
     }
 
@@ -149,7 +186,9 @@ public class Board {
     }
 
 
-    // Set value of a square on the board.
+    // -----------------------------------------------------------------------
+    // Set / clear a cell
+    // -----------------------------------------------------------------------
 
     public void set(int position, Player player) {
         assert (isEmpty(position));
@@ -189,7 +228,9 @@ public class Board {
     }
 
 
-    // Equality.
+    // -----------------------------------------------------------------------
+    // Equality
+    // -----------------------------------------------------------------------
 
     public boolean equals(Board other) {
         return this.o == other.o && this.x == other.x;
@@ -206,7 +247,9 @@ public class Board {
     }
 
 
-    // Image & printing functions.
+    // -----------------------------------------------------------------------
+    // Printing
+    // -----------------------------------------------------------------------
 
     @Override
     public String toString() {
@@ -227,12 +270,14 @@ public class Board {
         return result;
     }
 
-
     public static Board valueOf(String s) {
         return new Board(s);
     }
 
-
+    /**
+     * Prints the board as four side-by-side 4×4 layers (z=0 to z=3, left to right).
+     * Rows are printed top-to-bottom with y decreasing (y=3 at the top).
+     */
     public void print() {
         for (int y = N-1; y >= 0; y--) {
             for (int z = 0; z < N; z++) {
@@ -245,6 +290,10 @@ public class Board {
         }
     }
 
+    /**
+     * Prints the board with X and O swapped (used when the human plays as X
+     * so the display always shows the human as 'X' on screen).
+     */
     public void print(boolean temp) {
         for (int y = N-1; y >= 0; y--) {
             for (int z = 0; z < N; z++) {
@@ -258,8 +307,11 @@ public class Board {
     }
 
 
-    // Generate new board for a given move.
+    // -----------------------------------------------------------------------
+    // Immutable move application
+    // -----------------------------------------------------------------------
 
+    /** Returns a new Board with the given coordinate set to player. */
     public Board next(Coordinate move, Player player) {
         assert this.isEmpty(move);
         Board result = new Board(this);
@@ -269,23 +321,23 @@ public class Board {
 
     public Board next(int position, Player player) {
         return next(Coordinate.valueOf(position), player);
-        // return next(new Coordinate(position), player);
     }
 
     public Board next(int x, int y, int z, Player player) {
-        Coordinate val = Coordinate.valueOf(x, y, z);
-        return next (val, player);
-        // return next (new Coordinate(x, y, z), player);
+        return next(Coordinate.valueOf(x, y, z), player);
     }
 
 
-    // Iterators.
+    // -----------------------------------------------------------------------
+    // Empty-square iterator
+    // -----------------------------------------------------------------------
 
     private class EmptySquareIterator implements Iterator<Coordinate> {
 
         private Iterator<Integer> iterator;
 
         public EmptySquareIterator() {
+            // Iterate over the set bits of the empty-cell bitmask
             this.iterator = Bit.iterator(Board.this.get(Player.EMPTY));
         }
 
@@ -295,7 +347,6 @@ public class Board {
 
         public Coordinate next() {
             return Coordinate.valueOf(this.iterator.next());
-            // return new Coordinate(this.iterator.next());
         }
     }
 
@@ -312,40 +363,10 @@ public class Board {
         };
     }
 
-//    @Override
-//    public Iterable<Action> moves() {
-//        return new Iterable<Action> () {
-//            @Override
-//            public Iterator<Action> iterator() {
-//                return State.this.new MoveIterator();
-//            }
-//        };
-//    }
-//
-//    private class MoveIterator implements Iterator<Action> {
-//        public ArrayList<Integer> empty = new ArrayList<>(); //prob could make this more efficient revisit later
-//        public int current = 0;
-//
-//        public MoveIterator(){
-//            for(int i = 0; i < 9; i++){
-//                if(isEmpty(i)) empty.add(i);
-//            }
-//        }
-//
-//        @Override
-//        public boolean hasNext() {
-//            // TODO
-//            return current < empty.size();
-//        }
-//
-//        @Override
-//        public Action next() {
-//            // TODO
-//            int move = empty.get(current);
-//            current++;
-//            return new Action(move, player);
-//        }
-//    }
+
+    // -----------------------------------------------------------------------
+    // Test / debug entry point
+    // -----------------------------------------------------------------------
 
     public static void main(String[] args) {
         for (String arg : args) {

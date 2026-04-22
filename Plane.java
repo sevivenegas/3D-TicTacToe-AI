@@ -1,6 +1,18 @@
+/**
+ * Represents one of the 18 two-dimensional cross-sectional planes of the 4×4×4 board.
+ *
+ * The 18 planes break down as:
+ *   - 12 axis-aligned flat planes (4 per axis: XY, XZ, YZ at each integer value 0–3)
+ *   - 6 diagonal planes (forward and reverse diagonal along each of the 3 axes)
+ *
+ * Planes are used for geometric queries such as detecting whether a Line is fully
+ * contained in a plane, or finding intersection points between planes and lines.
+ *
+ * Like Line, each plane stores its cell membership as a bitmask (long).
+ */
 public class Plane {
 
-    private long positions;
+    private long positions;  // bitmask of all cells belonging to this plane
     private String name;
 
     private Plane(String name) {
@@ -25,6 +37,7 @@ public class Plane {
         return Bit.isSet(this.positions, coordinate.position());
     }
 
+    /** Returns true if this plane contains all 4 cells of the given line. */
     public boolean contains(Line line) {
         return Bit.countOnes(this.positions & line.positions()) == N;
     }
@@ -37,6 +50,10 @@ public class Plane {
         return (this.positions & line.positions()) != 0;
     }
 
+    /**
+     * Returns the Line formed by the intersection of two distinct, intersecting planes.
+     * Returns null if the planes are identical or don't intersect.
+     */
     public Line intersection(Plane plane) {
         if (this.intersects(plane) && !this.equals(plane)) {
             return Line.find(this.positions & plane.positions);
@@ -45,6 +62,10 @@ public class Plane {
         }
     }
 
+    /**
+     * Returns the single Coordinate where a line crosses this plane (if not fully contained).
+     * Returns null if the line is fully inside the plane or doesn't intersect.
+     */
     public Coordinate intersection(Line line) {
         if (this.intersects(line) && !this.contains(line)) {
             return Coordinate.forMask(line.positions() & this.positions);
@@ -83,6 +104,10 @@ public class Plane {
     }
 
 
+    // -----------------------------------------------------------------------
+    // Private factory methods for constructing each class of plane
+    // -----------------------------------------------------------------------
+
     private static enum Axis { X, Y, Z }
     private static final int N = Coordinate.N;
 
@@ -90,6 +115,10 @@ public class Plane {
         this.positions = Bit.set(this.positions, Coordinate.position(x, y, z));
     }
 
+    /**
+     * Creates a flat axis-aligned plane: all cells where the given axis equals value.
+     * E.g. Axis.Z, value=2 produces the 4×4 layer at z=2 (the XY-plane at Z=2).
+     */
     private static Plane Straight(Axis axis, int value) {
         String name = "";
         switch (axis) {
@@ -111,6 +140,10 @@ public class Plane {
         return plane;
     }
 
+    /**
+     * Creates a forward diagonal plane: cells where the two non-fixed axes are equal
+     * (e.g. Axis.Z → cells where x == y, for all z).
+     */
     private static Plane ForwardDiagonal(Axis axis) {
         String name = "";
         switch (axis) {
@@ -132,6 +165,10 @@ public class Plane {
         return plane;
     }
 
+    /**
+     * Creates a reverse diagonal plane: cells where one non-fixed axis equals N-1 minus the other
+     * (e.g. Axis.Z → cells where x + y == N-1, for all z).
+     */
     private static Plane ReverseDiagonal(Axis axis) {
         String name = "";
         switch (axis) {
@@ -153,13 +190,20 @@ public class Plane {
         return plane;
     }
 
+
+    // -----------------------------------------------------------------------
+    // Precomputed array of all 18 planes, built at class-load time
+    // -----------------------------------------------------------------------
+
     public static final Plane[] planes = new Plane[18];
     static {
         int count = 0;
         for (Axis axis : Axis.values()) {
+            // 4 flat axis-aligned planes per axis = 12 total
             for (int value = 0; value < N; value++) {
                 planes[count++] = Straight(axis, value);
             }
+            // 1 forward + 1 reverse diagonal plane per axis = 6 total
             planes[count++] = ForwardDiagonal(axis);
             planes[count++] = ReverseDiagonal(axis);
         }
